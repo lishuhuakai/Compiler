@@ -18,7 +18,6 @@ typedef struct Node {
 	Node *next;
 }Node;
 
-
 typedef struct Nfa {
 	Node *head;
 	Node *start;
@@ -26,5 +25,6 @@ typedef struct Nfa {
 }Nfa;
 
 Nfa* Thompson(Re* r);
+void FreeNfa(Nfa* f);
 void DisplayNfa(Nfa& g);
 

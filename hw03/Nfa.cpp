@@ -1,9 +1,11 @@
 #include <iostream>
+#include <list>
 #include "Nfa.h"
 using namespace std;
 
-
-
+//#define _DEMO_
+static list<Node*> ln;
+static list<Edge*> le;
 ////////////////////////////////
 // construct functions
 static Node * NewNode(int num, Node* next_node) {
@@ -11,6 +13,7 @@ static Node * NewNode(int num, Node* next_node) {
 	nd->firstEdge = NULL;
 	nd->label = num;
 	nd->next = next_node;
+	ln.push_back(nd); // record the point of Node
 	return nd;
 }
 
@@ -20,6 +23,7 @@ static Edge * NewEdge(Node* from, Node* to, char c, Edge* next_edge) {
 	ne->to = to;
 	ne->trans_letter = c;
 	ne->nextEdge = next_edge;
+	le.push_back(ne); // record the point of Edge
 	return ne;
 }
 
@@ -36,15 +40,15 @@ static Nfa * NewNfa() {
 
 // counter -- we must ensure that each node's label is different
 static int counter = 0;
-static int nextNum() {
+static int NextNum() {
 	return counter++;
 }
 
 static Nfa* SingleChar(char c) {
 	Nfa *g = NewNfa();
 
-	Node *n1 = NewNode(nextNum(), NULL);
-	Node *n2 = NewNode(nextNum(), NULL);
+	Node *n1 = NewNode(NextNum(), NULL);
+	Node *n2 = NewNode(NextNum(), NULL);
 	g->head = n1;
 	n1->next = n2;
 
@@ -73,12 +77,13 @@ static Nfa* Concat(Nfa& a, Nfa& b) {
 	}
 	record->next = b.head;
 	a.accept = b.accept;
+	free(&b);
 	return &a;
 }
 
 static Nfa* Or(Nfa& a, Nfa& b) {
-	Node *n1 = NewNode(nextNum(), NULL);
-	Node *n2 = NewNode(nextNum(), NULL);
+	Node *n1 = NewNode(NextNum(), NULL);
+	Node *n2 = NewNode(NextNum(), NULL);
 	Node *nodeList = a.head;
 	//Node *ahead = a.head;
 	Node *record = NULL;
@@ -107,12 +112,13 @@ static Nfa* Or(Nfa& a, Nfa& b) {
 
 	a.start = n1;
 	a.accept = n2;
+	free(&b);
 	return &a;
 }
 
 static Nfa* Kleene(Nfa& a) {
-	Node* n1 = NewNode(nextNum(), a.start);
-	Node* n2 = NewNode(nextNum(), NULL);
+	Node* n1 = NewNode(NextNum(), a.start);
+	Node* n2 = NewNode(NextNum(), NULL);
 	Node* nodeList = a.head;
 	Node* record = NULL;
 	while (nodeList != NULL) {
@@ -152,10 +158,10 @@ Nfa* Thompson(Re* r) {
 	case RE_KIND_CHAR: {
 		Re_Char * rc = (Re_Char *)r;
 		g = SingleChar(rc->c);
-#ifdef  _DEBUG
+#ifdef  _DEMO_
 		cout << "______________________________" << endl;
 		DisplayNfa(*g);
-#endif //  _DEBUG
+#endif //  _DEMO_
 		return g;
 	}
 	case RE_KIND_CONCAT: {
@@ -163,10 +169,10 @@ Nfa* Thompson(Re* r) {
 		Nfa *l = Thompson(rc->left);
 		Nfa *r = Thompson(rc->right);
 		g = Concat(*l, *r);
-#ifdef  _DEBUG
+#ifdef  _DEMO_
 		cout << "______________________________" << endl;
 		DisplayNfa(*g);
-#endif //  _DEBUG
+#endif //  _DEMO_
 		return g;
 	}
 	case RE_KIND_ALT: {
@@ -174,26 +180,43 @@ Nfa* Thompson(Re* r) {
 		Nfa *l = Thompson(ra->left);
 		Nfa *r = Thompson(ra->right);
 		g = Or(*l, *r);
-#ifdef  _DEBUG
+#ifdef  _DEMO_
 		cout << "______________________________" << endl;
 		DisplayNfa(*g);
-#endif //  _DEBUG
+#endif //  _DEMO_
 		return g;
 	}
 	case RE_KIND_CLOSURE: {
 		Re_Closure *rc = (Re_Closure *)r;
 		Nfa *l = Thompson(rc->left);
 		g = Kleene(*l);
-#ifdef  _DEBUG
+#ifdef  _DEMO_
 		cout << "______________________________" << endl;
 		DisplayNfa(*g);
-#endif //  _DEBUG
+#endif //  _DEMO_
 		return g;
 	}
 	default:
 		break;
 	}
 	return g;
+}
+
+void FreeNfa(Nfa* f) {
+	list<Node*>::iterator _ln = ln.begin();
+	while (_ln != ln.end()) {
+		free(*_ln);
+		++_ln;
+	}
+	list<Edge*>::iterator _le = le.begin();
+	while (_le != le.end()) {
+		free(*_le);
+		++_le;
+	}
+	ln.clear();
+	le.clear();
+	free(f);
+	counter = 0;
 }
 
 static int _main() {

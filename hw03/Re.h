@@ -35,3 +35,4 @@ typedef struct Re_Closure {
 
 Re* Parse(char *str);
 void PrintReTree(Re *t);
+void FreeRe(Re *r);

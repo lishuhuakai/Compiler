@@ -1,29 +1,15 @@
-// 构造一棵树
 #define _CRT_SECURE_NO_WARNINGS
 #include "Re.h"
 #include <cstring>
+#include <cassert>
 #include <iostream>
 using namespace std;
+//#define _DEMO_
 
 static char leftRe[256];
 static char rightRe[256];
 
-static bool isdigit(char c) {
-	if ((c >= '0') && (c <= '9'))
-		return true;
-	else return false;
-}
-
-static bool isletter(char c) {
-	if (((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z'))) {
-		return true;
-	}
-	else {
-		return false;
-	}
-}
-
-static bool isOprand(char c) {
+static bool IsOperator(char c) {
 	if ((c != '*') && (c != '|') && (c != '(') && (c != ')')) {
 		return false;
 	}
@@ -64,7 +50,7 @@ static Re_Closure *NewClosure(Re *l) {
 	return nc;
 }
 
-static bool strcontain(char *str, char c) {
+static bool StrCont(char *str, char c) {
 	int len = strlen(str);
 	for (int i = 0; i < len; ++i) {
 		if (str[i] == c)
@@ -73,93 +59,187 @@ static bool strcontain(char *str, char c) {
 	return false;
 }
 
-char * GetLeftRe(char *re, bool flag = false) { // 找到左边的Re语句
+typedef struct Part { // used for re
+	int size;
+	char re[32];
+}Part;
+
+Part GetLeftPart(char *re) { // 找到左边的Re语句
+	Part rs;
+	int len = 0;
 	int index = 0;
-	if (*re == '(') {
+	int len_of_re = strlen(re);
+	if (*re == '(') { // re start with left parathesis
 		int counter = 1;
-		re++;
-		while (counter != 0) {// 我们应该做的是去掉一层括号
-			if (((*re == ')') && counter > 1) || (*re != ')')) 
-				leftRe[index++] = *re;
-			if (*re == '(') {
-				counter++;
-			} 
-			else if (*re == ')') {
-				counter--;
-			}
-			re++;
+		leftRe[index++] = '('; 
+		re++; 
+		len++;
+		while (counter != 0) {
+			leftRe[index++] = *re;
+			if (*re == '(') counter++;
+			else if (*re == ')') counter--;
+			re++; 
+			len++;
+		}
+
+		bool flag = (*re == '*');
+		if (flag && len < (len_of_re - 1)) { // eg. leftRe = "(b|c)" and re = "(b|c)*xxx"
+			leftRe[index++] = '*'; 
+			leftRe[index] = '\0'; // now leftRe = "(b|c)*"
+			rs.size = len + 1;
+			strcpy_s(rs.re, leftRe);
+		}
+		else if (flag && len == (len_of_re - 1)) { // eg. leftRe = "(b|c)" and re = "(b|c)"
+			rs.size = len;
+			leftRe[index] = '\0';
+			strcpy_s(rs.re, leftRe);
+		}
+		else { // eg. leftRe = "(b|c)" and re = "(b|c)xxx"
+			rs.size = len;
+			leftRe[index] = '\0';
+			strncpy_s(rs.re, leftRe + 1, len - 2); // remove the parathesis
 		}
 	}
-	else if (strcontain(re, '|')  || strcontain(re, '*') || flag)
-	{
-		while (!isOprand(*re) && (*re != '\0')) {
+	else { // re start with regular letter
+		while (!IsOperator(*re) && (*re != '\0')) {
 			leftRe[index++] = *re;
 			re++;
+			len++;
+		}
+
+		if ((len < len_of_re) && (*re == '|')) { // eg. leftRe = "xyz" and re = "xyz|xxx"
+			rs.size = len;
+			leftRe[index] = '\0';
+			strcpy_s(rs.re, leftRe);
+		}
+		else if (len == 1 && (*re == '*') && len_of_re > 2) { // eg. leftRe = "x" and re = "x*as"
+			rs.size = 2;
+			rs.re[0] = leftRe[0]; 
+			rs.re[1] = '*'; 
+			rs.re[2] = '\0';
+		}
+		else { // eg. leftRe = 'x' and re = "x*" or leftRe = 'xyze' and re = "xyzekuX"
+			rs.size = 1;
+			rs.re[0] = leftRe[0];
+			rs.re[1] = '\0';
+		}
+	}
+	return rs;
+}
+
+Part GetConcatRightPart(char *re) {
+	int index = 0;
+	int len = 0;
+	Part rs;
+	if (*re == '(') {
+		int counter = 1;
+		rightRe[index++] = '(';
+		re++;
+		len++;
+		while (counter != 0) {
+			rightRe[index++] = *re;
+			if (*re == '(') counter++;
+			else if (*re == ')') counter--;
+			len++;
+			re++;
+		}
+		if (*re == '*') {
+			rightRe[index++] = '*';
+			rightRe[index] = '\0'; // now leftRe = "(b|c)*"
+			rs.size = len + 1;
+			strcpy_s(rs.re, rightRe);
+		}
+		else { // eg. rightRe = "((b|c)*)" and re = "((b|c)*)"
+			rightRe[index] = '\0';
+			rs.size = len; // remove the parathesis
+			strncpy_s(rs.re, rightRe + 1, len - 2); // remove the parathesis
 		}
 	}
 	else {
-		leftRe[index++] = *re;
+		rs.size = 1;
+		rs.re[0] = re[0];
+		rs.re[1] = '\0';
 	}
-	leftRe[index] = '\0';
-	return leftRe;
+	return rs;
+}
+
+Part GetOrRightPart(char *re) {
+	Part rs;
+	int len = 0;
+	int index = 0;
+	int size_of_left_para = 0; // the number of left parathesis
+	int size_of_right_para = 0; // the number of right parathesis
+	while (*re != '\0') {
+		if (*re == '(') size_of_left_para++;
+		else if (*re == ')') size_of_right_para++;
+
+		if (size_of_right_para > size_of_left_para) break;
+		rightRe[index++] = *re;
+		re++; len++;
+	}
+	rs.size = len;
+	rightRe[index] = '\0';
+	strcpy_s(rs.re, rightRe);
+	return rs;
 }
 
 Re* Parse(char *str) {
 	char *re = str;
-	char buf[256];
-	int len = 0;
 	Re *left = NULL;
 	
 	while (*re != '\0') {
-		
-		if (strlen(re) == 1 && !isOprand(*re)) { // regular letter
+		// sigle character && not operator
+		if (strlen(re) == 1 && !IsOperator(*re)) { // regular letter
 			if (left == NULL) {
 				return (Re *)NewReChar(*re);
 			}
 			else {
 				return (Re *)NewConcat(left, (Re *)NewReChar(*re));
-			}
-			
+			}	
 		}
 
+		// or
 		if (*re == '|') {
-			char *rre = GetLeftRe(re + 1, true);
-			strcpy(buf, rre);
-			len = strlen(buf); // length of leftRe
-			
-			left = (Re *)NewAlt(left, Parse(buf));
-			if (*(re + 1) == '(') {
-				re += (1 + len + 2);
-			} 
-			else {
-				re += (1 + len);
-			}
+			Part rp = GetOrRightPart(re + 1);
+			left = (Re *)NewAlt(left, Parse(rp.re));
+#ifdef _DEMO_
+			PrintReTree(left);
+			cout << endl;
+#endif // _DEMO_
+			re += (1 + rp.size);
 			continue;
 		}
 
+		// kleene
 		if (*re == '*') {
 			left = (Re *)NewClosure(left);
+#ifdef _DEMO_
+			PrintReTree(left);
+			cout << endl;
+#endif // _DEMO_
 			re += 1;
 			continue;
 		}
 
-		char *lre = GetLeftRe(re);
-		strcpy(buf, lre);
-		len = strlen(buf); // length of leftRe
-	
+		// concat
 		if (left == NULL) {
-			left = Parse(buf); // Parse LeftRe of Re
+			Part lp = GetLeftPart(re); // left part
+			left = Parse(lp.re); // Parse LeftRe of Re
+#ifdef _DEMO_
+			PrintReTree(left);
+			cout << endl;
+#endif // _DEMO_
+			re += lp.size;
 		}
 		else {
-			left = (Re *)NewConcat(left, Parse(buf));
+			Part rp = GetConcatRightPart(re); // right part
+			left = (Re *)NewConcat(left, Parse(rp.re));
+#ifdef _DEMO_
+			PrintReTree(left);
+			cout << endl;
+#endif // _DEMO_
+			re += rp.size;
 		}
-		
-		if (*re == '(') { // we must omit the left parameter
-			re += (len + 2);
-		}
-		else {
-			re += len;
-		}	
 	}
 	return left;
 }
@@ -199,14 +279,45 @@ void PrintReTree(Re *t) {
 	default:
 		break;
 	}
+	
 }
 
-int main() {
-	char re[25] = "a(b|c)*";
-	
+void FreeRe(Re *t) {
+	switch (t->kind) {
+	case RE_KIND_CHAR: {
+		Re_Char *r = (Re_Char *)t;
+		free(r);
+		break;
+	}
+	case RE_KIND_ALT: {
+		Re_Alt *r = (Re_Alt *)t;
+		FreeRe(r->left);
+		FreeRe(r->right);
+		free(r);
+		break;
+	}
+	case RE_KIND_CLOSURE: {
+		Re_Closure *r = (Re_Closure *)t;
+		FreeRe(r->left);
+		free(r);
+		break;
+	}
+	case RE_KIND_CONCAT: {
+		Re_Concat *r = (Re_Concat *)t;
+		FreeRe(r->left);
+		FreeRe(r->right);
+		free(r);
+		break;
+	}
+	default: 
+		free(t);
+		break;
+	}
+}
+static int _main() {
+	char re[25] = "(a|b)((c|d)*)";
 	Re * r = Parse(re);
 	PrintReTree(r);
-
 	system("pause");
 	return 0;
 }
